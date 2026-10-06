@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MyMeetings · Solution Architecture Canvas</title>
+<!--
+  Living architecture canvas for the MyMeetings modular monolith.
+  Self-contained: no external scripts, fonts or images. Open the file in any modern browser.
+
+  HOW TO ADD THE NEXT PIECE
+  1. Add a new <section class="sec" ...> inside #world (see "SECTION 01" below) at a free position
+     (style="left:...px; top:...px; width:...px"). The side navigation, "fit" and keyboard shortcuts pick it up automatically.
+  2. Draw connectors between any two elements by adding an entry to LINKS in the script.
+  3. Reuse the building blocks: .card / .steps / .note / .chip, and the "matrix" builder for tables.
+-->
+<style>
+  :root {
+    --bg: #090d15;
+    --text: #dbe4f3;
+    --muted: #8a99b5;
+    --dim: #5d6c88;
+    --line: #22304a;
+    --mono: "Cascadia Code", "JetBrains Mono", Consolas, "SFMono-Regular", monospace;
+    --sans: Inter, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+
+  /* ---------- canvas ---------- */
+  #viewport {
+    position: fixed; inset: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none;
+    background-color: var(--bg);
+    background-image: radial-gradient(circle, #26354f 1.1px, transparent 1.7px);
+    background-size: 28px 28px;
+  }
+  #viewport.grabbing { cursor: grabbing; }
+  #viewport::after { /* soft vignette */
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 40%, transparent 45%, rgba(0,0,0,.45) 100%);
+  }
+  #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  #links { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; z-index: 2; }
+
+  /* ---------- section frame ---------- */
+  .sec {
+    position: absolute; padding: 44px 48px 52px; border: 1px solid #1f2c45; border-radius: 30px;
+    background: linear-gradient(180deg, rgba(20,30,50,.62), rgba(11,17,29,.62));
+    box-shadow: 0 40px 100px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .sec-head { display: flex; align-items: baseline; gap: 20px; }
+  .sec-no { font: 700 15px var(--mono); letter-spacing: .18em; color: #6aa9ff; }
+  .sec-head h2 { margin: 0; font-size: 36px; font-weight: 650; letter-spacing: -.015em; }
+  .sec-sub { margin: 8px 0 34px; max-width: 1500px; color: var(--muted); font-size: 17px; line-height: 1.5; }
+  .legend { display: flex; gap: 22px; flex-wrap: wrap; margin: -14px 0 30px; font-size: 13px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; }
+
+  .row { display: flex; align-items: flex-start; gap: 80px; position: relative; z-index: 1; }
+
+  /* ---------- cards ---------- */
+  .card {
+    --c: #6aa9ff; position: relative; border: 1px solid #23324f; border-top: 3px solid var(--c); border-radius: 14px;
+    background: linear-gradient(180deg, #14203a 0%, #0f1829 100%); box-shadow: 0 14px 34px rgba(0,0,0,.4); padding-bottom: 14px;
+  }
+  .card-head { display: flex; align-items: center; gap: 14px; padding: 16px 18px 12px; }
+  .badge {
+    flex: none; min-width: 34px; height: 34px; padding: 0 6px; border-radius: 17px; display: grid; place-items: center;
+    font: 700 15px var(--mono); color: #07101b; background: var(--c); box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 22%, transparent);
+  }
+  .card-head h3 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -.005em; }
+  .sig { margin: 3px 0 0; font: 12.5px/1.35 var(--mono); color: var(--muted); }
+
+  .steps { list-style: none; margin: 0; padding: 4px 18px 0; counter-reset: s; }
+  .steps li { position: relative; padding: 10px 0 10px 36px; border-top: 1px solid #1c2a45; counter-increment: s; }
+  .steps li::before {
+    content: counter(s); position: absolute; left: 0; top: 12px; width: 23px; height: 23px; border-radius: 7px;
+    display: grid; place-items: center; font: 600 12px var(--mono); color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent);
+  }
+  .steps code { display: block; font: 600 13.5px/1.4 var(--mono); color: var(--c); word-break: break-word; }
+  .steps li > span { display: block; margin-top: 3px; font-size: 13.5px; line-height: 1.5; color: #b6c2d8; }
+  .steps li.hot { margin: 4px -10px; padding-left: 46px; padding-right: 10px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); background: linear-gradient(90deg, color-mix(in srgb, var(--c) 18%, transparent), transparent); }
+  .steps li.hot::before { left: 10px; top: 12px; background: var(--c); color: #07101b; }
+  .tag { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font: 600 10.5px var(--mono); letter-spacing: .06em; color: #07101b; background: var(--c); vertical-align: 1px; }
+
+  .map { list-style: none; margin: 0; padding: 4px 18px 0; }
+  .map li { padding: 10px 0; border-top: 1px solid #1c2a45; }
+  .map code { font: 600 13.5px var(--mono); color: var(--c); }
+  .map .to { display: flex; align-items: center; gap: 8px; margin-top: 5px; font: 13px var(--mono); color: #cdd8ec; }
+  .map .to b { color: var(--muted); font-weight: 400; }
+
+  .note { margin: 12px 18px 0; padding: 10px 13px; border-left: 3px solid var(--c); border-radius: 6px; background: rgba(255,255,255,.04); font-size: 13px; line-height: 1.5; color: #b6c2d8; }
+  .note strong { color: #e6edf9; font-weight: 600; }
+  .src { margin: 12px 18px 0; font: 11.5px var(--mono); color: var(--dim); }
+
+  .chip { display: inline-block; margin: 3px 6px 3px 0; padding: 3px 9px; border-radius: 999px; border: 1px solid #2b3c5d; background: #0c1423; font: 12px var(--mono); color: #bccae2; }
+  .chip.nul { color: #ffc46b; border-color: #5a4720; }
+  .chips { padding: 0 18px; }
+
+  /* ---------- InitializeModules band ---------- */
+  .band { --c: #94a3b8; margin-top: 96px; padding: 24px 28px 28px; border: 1px solid #2a3a5b; border-radius: 22px; background: rgba(13,21,36,.7); position: relative; z-index: 1; }
+  .band-head { display: flex; align-items: center; gap: 16px; }
+  .band-head .badge { background: #cbd5e1; }
+  .band-head h3 { margin: 0; font-size: 24px; font-weight: 650; }
+  .inputs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin: 20px 0 74px; }
+  .inp { padding: 12px 14px; border: 1px dashed #34476b; border-radius: 10px; background: rgba(255,255,255,.025); }
+  .inp code { display: block; font: 600 13px var(--mono); color: #cfdcf4; }
+  .inp span { display: block; margin-top: 4px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+  .inp-title { margin: 22px 0 0; font: 600 12px var(--mono); letter-spacing: .14em; color: var(--dim); text-transform: uppercase; }
+  .mods { display: flex; gap: 28px; align-items: stretch; }
+  .mods .card { flex: 1; min-width: 0; }
+  .facts { margin: 10px 0 0; padding: 0 18px 0 36px; font-size: 13.5px; line-height: 1.5; color: #b6c2d8; }
+  .facts li { margin: 5px 0; }
+  .facts li::marker { color: var(--c); }
+  .facts b { color: #e6edf9; font-weight: 600; }
+
+  /* ---------- common sequence + matrix ---------- */
+  .panel { margin-top: 52px; padding: 24px 28px 28px; border: 1px solid #2a3a5b; border-radius: 22px; background: rgba(13,21,36,.7); position: relative; z-index: 1; }
+  .panel h3 { margin: 0; font-size: 22px; font-weight: 650; }
+  .panel > p { margin: 6px 0 22px; color: var(--muted); font-size: 15px; }
+  .seq { display: flex; gap: 72px; }
+  .seq .card { flex: 1; }
+  .seq .card p { margin: 0; padding: 4px 18px 0; font-size: 13.5px; line-height: 1.55; color: #b6c2d8; }
+
+  table.matrix { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
+  .matrix th, .matrix td { padding: 11px 8px; text-align: center; border-bottom: 1px solid #1c2a45; }
+  .matrix thead th { font: 600 11.5px var(--mono); letter-spacing: .04em; color: var(--muted); vertical-align: bottom; border-bottom: 1px solid #2f4268; }
+  .matrix tbody th { text-align: left; padding-left: 14px; font-weight: 650; font-size: 15px; white-space: nowrap; }
+  .matrix tbody th i { display: inline-block; width: 9px; height: 9px; margin-right: 10px; border-radius: 3px; }
+  .matrix tbody tr:hover { background: rgba(255,255,255,.03); }
+  .dot { display: inline-block; width: 13px; height: 13px; border-radius: 50%; background: #6aa9ff; box-shadow: 0 0 10px rgba(106,169,255,.55); }
+  .dot.c { background: linear-gradient(90deg, #6aa9ff 50%, transparent 50%); border: 1.5px solid #6aa9ff; box-shadow: none; }
+  .dot.e { background: transparent; border: 2px solid #6aa9ff; box-shadow: none; }
+  .dot.x { background: none; box-shadow: none; width: auto; height: auto; border-radius: 0; color: #ff7a8a; font: 700 14px var(--mono); }
+  .dash { color: #34456a; }
+  .key { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 16px; font-size: 12.5px; color: var(--muted); }
+  .key .dot { margin-right: 8px; vertical-align: -2px; width: 11px; height: 11px; }
+  .key .dot.x { width: auto; height: auto; }
+
+  /* ---------- messaging lanes (section 02) ---------- */
+  .lanes { gap: 110px; align-items: stretch; }
+  .lane { display: flex; flex-direction: column; gap: 78px; padding: 18px 22px 26px; border: 1px dashed color-mix(in srgb, var(--c) 45%, #1f2c45); border-radius: 22px; background: rgba(13,21,36,.45); }
+  .lane.bus { justify-content: center; border-style: solid; }
+  .lane-title { margin: 0; font-size: 22px; font-weight: 650; color: var(--c); }
+  .lane-title small { margin-left: 8px; font: 12px var(--mono); letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }
+
+  .lane.g { display: grid; column-gap: 150px; row-gap: 78px; align-items: stretch; }
+  .lane.g .lane-title { grid-column: 1 / -1; }
+  .dbcol { display: flex; flex-direction: column; justify-content: center; gap: 26px; }
+  .db-title { margin: 0; font: 600 12px var(--mono); letter-spacing: .08em; color: #38bdf8; text-transform: uppercase; }
+  .db-title b { color: #e6edf9; }
+  .card.db { --c: #38bdf8; border-radius: 14px 14px 22px 22px; background: linear-gradient(180deg, #10263a 0%, #0c1827 100%); }
+  .card.db .badge { border-radius: 8px; font-size: 12px; }
+  .card.db .card-head h3 { font-size: 17px; }
+  .db-use { margin: 0; padding: 0 18px; font-size: 13px; line-height: 1.5; color: #b6c2d8; }
+  .db-use b { color: #e6edf9; font-weight: 600; }
+
+  /* ---------- layered overview (section 03) ---------- */
+  .layers { display: flex; flex-direction: column; gap: 84px; position: relative; z-index: 1; }
+  .layer { --c: #6aa9ff; display: grid; grid-template-columns: 230px 1fr; gap: 24px; align-items: stretch; padding: 22px 26px; border: 1px solid color-mix(in srgb, var(--c) 40%, #1f2c45); border-left: 5px solid var(--c); border-radius: 18px; background: rgba(13,21,36,.6); }
+  .layer-name { display: flex; flex-direction: column; justify-content: center; font-size: 21px; font-weight: 650; color: var(--c); }
+  .layer-name b { font: 700 13px var(--mono); letter-spacing: .16em; color: var(--dim); margin-bottom: 4px; }
+  .layer-name small { margin-top: 6px; font: 400 12.5px/1.4 var(--mono); color: var(--muted); }
+  .layer-body { display: flex; gap: 22px; align-items: stretch; }
+  .layer-body > .card { flex: 1; min-width: 0; }
+  .layer-body.split { align-items: stretch; gap: 110px; }
+  .layer-note { grid-column: 2; margin: -8px 0 0; font-size: 13.5px; color: var(--muted); }
+  .card.box { padding-bottom: 12px; }
+  .card.box .card-head { padding: 14px 16px 6px; }
+  .card.box h3 { font-size: 17px; }
+  .box-t { margin: 0; padding: 0 16px; font-size: 13px; line-height: 1.5; color: #b6c2d8; }
+  .card.box.db { --c: #38bdf8; border-radius: 14px 14px 22px 22px; background: linear-gradient(180deg, #10263a 0%, #0c1827 100%); }
+  .mods3 { flex: 2.2; display: flex; gap: 16px; min-width: 0; }
+  .mods3 .card { flex: 1; }
+  .card.box.inside { flex: 1.2; }
+  .card.box.bus { flex: 1.1; background: linear-gradient(180deg, #1a2234 0%, #111826 100%); }
+  .card.box .facts { margin-top: 4px; padding-right: 14px; font-size: 13px; }
+
+  .foot { margin-top: 30px; font: 12px var(--mono); color: var(--dim); }
+
+  /* ---------- connectors ---------- */
+  .lnk { fill: none; stroke: #6aa9ff; stroke-width: 2.4; stroke-linecap: round; opacity: .9; }
+  .lnk.flow { stroke-dasharray: 7 9; animation: dash 1.1s linear infinite; }
+  .lnk.thin { stroke-width: 1.8; opacity: .65; }
+  @keyframes dash { to { stroke-dashoffset: -16; } }
+  .lbl-bg { fill: #0b1220; stroke: #2e426a; }
+  .lbl { fill: #cfe0ff; font: 600 13px var(--mono); }
+  @media (prefers-reduced-motion: reduce) { .lnk.flow { animation: none; } }
+
+  /* ---------- chrome ---------- */
+  .glass { background: rgba(10,15,26,.82); backdrop-filter: blur(10px); border: 1px solid #22314d; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+  #title { position: fixed; left: 22px; top: 18px; z-index: 10; padding: 12px 18px; border-radius: 14px; display: flex; align-items: center; gap: 14px; pointer-events: none; }
+  #title .mark { width: 30px; height: 30px; border-radius: 8px; background: conic-gradient(from 210deg, #6aa9ff, #9b8cff, #35d0c9, #6aa9ff); display: grid; place-items: center; }
+  #title .mark::after { content: ""; width: 12px; height: 12px; border-radius: 3px; background: #0a0f1a; }
+  #title b { display: block; font-size: 15px; letter-spacing: .01em; }
+  #title small { display: block; margin-top: 1px; font-size: 11.5px; color: var(--muted); }
+  #nav { position: fixed; left: 22px; top: 92px; z-index: 10; width: 238px; padding: 12px; border-radius: 14px; }
+  #nav h4 { margin: 0; font: 600 11px var(--mono); letter-spacing: .16em; color: var(--dim); text-transform: uppercase; }
+  #nav-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px 8px; }
+  #nav #nav-toggle { width: 30px; height: 30px; padding: 0; justify-content: center; align-items: center; font-size: 16px; color: var(--muted); }
+  #nav.collapsed { width: 54px; padding: 8px; }
+  #nav.collapsed #nav-head { margin: 0; justify-content: center; }
+  #nav.collapsed h4, #nav.collapsed #nav-list { display: none; }
+  #nav button { display: flex; width: 100%; gap: 10px; align-items: baseline; text-align: left; padding: 9px 10px; border: 0; border-radius: 9px; background: transparent; color: var(--text); font: 500 13.5px var(--sans); cursor: pointer; }
+  #nav button:hover { background: rgba(106,169,255,.12); }
+  #nav button span { font: 600 11.5px var(--mono); color: #6aa9ff; }
+  #controls { position: fixed; right: 22px; bottom: 22px; z-index: 10; display: flex; align-items: center; gap: 4px; padding: 6px; border-radius: 14px; }
+  #controls button { min-width: 38px; height: 38px; padding: 0 11px; border: 0; border-radius: 9px; background: transparent; color: var(--text); font: 600 17px var(--sans); cursor: pointer; }
+  #controls button:hover { background: rgba(106,169,255,.16); }
+  #controls .txt { font: 600 12.5px var(--mono); }
+  #controls output { min-width: 56px; text-align: center; font: 600 12.5px var(--mono); color: var(--muted); }
+  #controls .sep { width: 1px; height: 22px; background: #26364f; margin: 0 4px; }
+  #hint { position: fixed; left: 22px; bottom: 22px; z-index: 10; padding: 10px 14px; border-radius: 12px; font-size: 12px; color: var(--muted); pointer-events: none; }
+  #hint kbd { padding: 1px 6px; border: 1px solid #2c3d5c; border-bottom-width: 2px; border-radius: 5px; background: #0c1422; font: 11px var(--mono); color: #c3d0e8; }
+</style>
+</head>
+<body>
+
+<div id="viewport">
+  <div id="world">
+    <svg id="links" xmlns="http://www.w3.org/2000/svg"></svg>
+
+    <!-- ===================================================================================== -->
+    <!-- SECTION 01 · STARTUP                                                                   -->
+    <!-- ===================================================================================== -->
+    <section class="sec" id="sec-startup" data-no="01" data-title="Startup &amp; boot sequence" style="left:0; top:0; width:2600px;">
+      <div class="sec-head"><span class="sec-no">01</span><h2>Startup &amp; boot sequence</h2></div>
+      <p class="sec-sub">
+        How the API composes the whole solution. <code style="font-family:var(--mono)">Program</code> builds the host and plugs in Autofac;
+        the runtime then drives <code style="font-family:var(--mono)">Startup</code> through four phases, and the last one boots every business module,
+        each with its own isolated container, scheduler and event-bus subscriptions.
+      </p>
+      <div class="legend">
+        <span><i style="background:#5aa9ff"></i>Host</span>
+        <span><i style="background:#9b8cff"></i>Constructor</span>
+        <span><i style="background:#35d0c9"></i>ConfigureServices</span>
+        <span><i style="background:#ffb454"></i>ConfigureContainer</span>
+        <span><i style="background:#5bd68a"></i>Configure</span>
+        <span><i style="background:#94a3b8"></i>Module boot</span>
+      </div>
+
+      <!-- ROW 1 · host + the four Startup phases, in call order -->
+      <div class="row" id="row-startup">
+
+        <article class="card" id="c-program" style="--c:#5aa9ff; width:340px;">
+          <header class="card-head"><span class="badge">0</span>
+            <div><h3>Program.Main</h3><p class="sig">application entry point</p></div></header>
+          <ol class="steps">
+            <li><code>Host.CreateDefaultBuilder(args)</code><span>Default generic host: configuration sources, logging and the built-in DI container.</span></li>
+            <li><code>UseServiceProviderFactory(new AutofacServiceProviderFactory())</code><span>Swaps the built-in container for <b>Autofac</b>. This is what makes the runtime call <i>Startup.ConfigureContainer</i>.</span></li>
+            <li><code>ConfigureWebHostDefaults(… UseStartup&lt;Startup&gt;())</code><span>Adds Kestrel and web defaults, then hands control to the <i>Startup</i> class.</span></li>
+            <li><code>Build().Run()</code><span>Builds the host (the four phases on the right run here) and blocks while the API serves HTTP.</span></li>
+          </ol>
+          <div class="src">Program.cs</div>
+        </article>
+
+        <article class="card" id="c-ctor" style="--c:#9b8cff; width:400px;">
+          <header class="card-head"><span class="badge">1</span>
+            <div><h3>Startup constructor</h3><p class="sig">Startup(IWebHostEnvironment env)</p></div></header>
+          <ol class="steps">
+            <li><code>ConfigureLogger()</code><span>Serilog with console + JSON file sinks (<i>logs/logs</i>), enriched with <i>Module</i> and <i>Context</i>. Creates <i>_logger</i> and <i>_loggerForApi</i> (Module = "API").</span></li>
+            <li><code>new ConfigurationBuilder()</code><span>Merges, in order: <i>appsettings.json</i> → <i>appsettings.{env}.json</i> → user secrets → environment variables prefixed <i>Meetings_</i>. Later sources win.</span></li>
+            <li><code>Log the connection string</code><span>Writes the resolved <i>MeetingsConnectionString</i> at Information level.</span></li>
+            <li><code>AuthorizationChecker.CheckAllEndpoints()</code><span>Fail-fast guard: reflects over every controller and throws if a public action has neither <i>[HasPermission]</i> nor <i>[NoPermissionRequired]</i>.</span></li>
+          </ol>
+          <div class="src">Startup.cs · Authorization/AuthorizationChecker.cs</div>
+        </article>
+
+        <article class="card" id="c-services" style="--c:#35d0c9; width:440px;">
+          <header class="card-head"><span class="badge">2</span>
+            <div><h3>ConfigureServices</h3><p class="sig">ConfigureServices(IServiceCollection services)</p></div></header>
+          <ol class="steps">
+            <li><code>AddControllers()</code><span>MVC controllers that expose the REST endpoints.</span></li>
+            <li><code>AddSwaggerDocumentation()</code><span>Swagger/OpenAPI generator with XML docs and a Bearer security definition.</span></li>
+            <li><code>ConfigureIdentityService()</code><span>IdentityServer4 (in-memory clients, scopes and resources, developer signing key) plus Bearer token validation for API <i>myMeetingsAPI</i>. Implemented in the UserAccess module.</span></li>
+            <li><code>IHttpContextAccessor</code><span>Singleton access to the current HTTP request.</span></li>
+            <li><code>IExecutionContextAccessor → ExecutionContextAccessor</code><span>Singleton exposing <i>UserId</i> (token <i>sub</i> claim), <i>CorrelationId</i> and <i>IsAvailable</i> to the modules.</span></li>
+            <li><code>AddProblemDetails(…)</code><span>Maps <i>InvalidCommandException</i> → HTTP 400 and <i>BusinessRuleValidationException</i> → HTTP 409 (RFC 7807).</span></li>
+            <li><code>AddAuthorization(…)</code><span>Policy <i>HasPermission</i>: Bearer scheme + <i>HasPermissionAuthorizationRequirement</i>.</span></li>
+            <li><code>IAuthorizationHandler → HasPermissionAuthorizationHandler</code><span>Scoped. Loads the user's permissions through the UserAccess module and compares them with the attribute's permission.</span></li>
+          </ol>
+          <div class="src">Startup.cs · Extensions/SwaggerExtensions.cs · UserAccess/…/IdentityConfiguration.cs</div>
+        </article>
+
+        <article class="card" id="c-container" style="--c:#ffb454; width:420px;">
+          <header class="card-head"><span class="badge">3</span>
+            <div><h3>ConfigureContainer</h3><p class="sig">ConfigureContainer(ContainerBuilder builder)</p></div></header>
+          <ul class="map">
+            <li><code>MeetingsAutofacModule</code><div class="to"><b>IMeetingsModule</b> → MeetingsModule</div></li>
+            <li><code>AdministrationAutofacModule</code><div class="to"><b>IAdministrationModule</b> → AdministrationModule</div></li>
+            <li><code>UserAccessAutofacModule</code><div class="to"><b>IUserAccessModule</b> → UserAccessModule</div></li>
+            <li><code>PaymentsAutofacModule</code><div class="to"><b>IPaymentsModule</b> → PaymentsModule</div></li>
+          </ul>
+          <div class="note"><strong>Dependency injection.</strong> Each Autofac module maps a module interface to its implementing class, <i>InstancePerLifetimeScope</i>. These are the API-side facades (ADR 0006) the controllers call.</div>
+          <div class="note"><strong>One root container.</strong> Autofac merges the ConfigureServices registrations with these modules; <i>Configure</i> reads it with <i>GetAutofacRoot()</i>. Registrations is not registered here, it is only initialised in <i>InitializeModules</i>.</div>
+          <div class="src">Startup.cs · API/Modules/*/…AutofacModule.cs</div>
+        </article>
+
+        <article class="card" id="c-configure" style="--c:#5bd68a; width:560px;">
+          <header class="card-head"><span class="badge">4</span>
+            <div><h3>Configure</h3><p class="sig">Configure(app, env, serviceProvider)</p></div></header>
+          <ol class="steps">
+            <li><code>GetAutofacRoot()</code><span>Fetches the Autofac root container used to boot the modules.</span></li>
+            <li><code>UseCors(…)</code><span>Any origin, header and method.</span></li>
+            <li class="hot"><code>InitializeModules(container)<span class="tag">BOOTS MODULES</span></code><span>Starts all five business modules before the first request. Expanded below.</span></li>
+            <li><code>UseMiddleware&lt;CorrelationMiddleware&gt;()</code><span>Attaches a correlation id to every request.</span></li>
+            <li><code>UseSwaggerDocumentation()</code><span>Swagger JSON + UI.</span></li>
+            <li><code>AddIdentityService()</code><span>Runs <i>UseIdentityServer</i>: login and token endpoints.</span></li>
+            <li><code>UseProblemDetails() | UseHsts()</code><span>Development: problem-details error responses. Otherwise: HSTS.</span></li>
+            <li><code>UseHttpsRedirection()</code><span>Redirects HTTP to HTTPS.</span></li>
+            <li><code>UseRouting()</code><span>Matches the URL to a controller action.</span></li>
+            <li><code>UseAuthorization()</code><span>Enforces the <i>HasPermission</i> policy. <i>UseAuthentication()</i> is commented out in the code.</span></li>
+            <li><code>UseEndpoints(MapControllers)</code><span>Executes the matched controller action.</span></li>
+          </ol>
+          <div class="src">Startup.cs</div>
+        </article>
+      </div>
+
+      <!-- ROW 2 · InitializeModules expanded -->
+      <div class="band" id="band">
+        <div class="band-head" id="band-head">
+          <span class="badge">4.3</span>
+          <div><h3>InitializeModules(container)</h3>
+            <p class="sig">private method of Startup · builds the shared inputs, then calls each module's <i>Startup.Initialize</i> in this order</p></div>
+        </div>
+        <p class="inp-title">Shared inputs prepared once</p>
+        <div class="inputs">
+          <div class="inp"><code>executionContextAccessor</code><span>new ExecutionContextAccessor(container.Resolve&lt;IHttpContextAccessor&gt;()). Current user and correlation id for all modules.</span></div>
+          <div class="inp"><code>emailsConfiguration</code><span>Built from <i>EmailsConfiguration:FromEmail</i>. The "from" address used for every outgoing email.</span></div>
+          <div class="inp"><code>connectionString</code><span><i>MeetingsConnectionString</i>. The same database connection string is passed to every module.</span></div>
+          <div class="inp"><code>_logger</code><span>The root Serilog logger. Each module derives its own with <i>Module</i> = its name.</span></div>
+          <div class="inp"><code>textEncryptionKey</code><span><i>Security:TextEncryptionKey</i>. Passed only to UserAccess and Registrations.</span></div>
+        </div>
+
+        <div class="mods" id="mods">
+          <article class="card" id="m-meetings" style="--c:#f472b6;">
+            <header class="card-head"><span class="badge">1</span>
+              <div><h3>Meetings</h3><p class="sig">MeetingsStartup.Initialize(…)</p></div></header>
+            <div class="chips"><span class="chip">connectionString</span><span class="chip">executionContext</span><span class="chip">logger</span><span class="chip">emailsConfiguration</span><span class="chip nul">eventsBus = null</span></div>
+            <ul class="facts">
+              <li><b>9</b> Autofac modules in its own container.</li>
+              <li>Outbox maps <b>8</b> domain notifications to their types.</li>
+              <li>Subscribes to <b>4</b> integration events (proposal accepted, subscription expiration changed, new user registered, meeting fee paid).</li>
+              <li>Exposed to the API as <b>IMeetingsModule</b>.</li>
+            </ul>
+          </article>
+
+          <article class="card" id="m-admin" style="--c:#a78bfa;">
+            <header class="card-head"><span class="badge">2</span>
+              <div><h3>Administration</h3><p class="sig">AdministrationStartup.Initialize(…)</p></div></header>
+            <div class="chips"><span class="chip">connectionString</span><span class="chip">executionContext</span><span class="chip">logger</span><span class="chip nul">eventsBus = null</span></div>
+            <ul class="facts">
+              <li><b>9</b> Autofac modules, including <b>InternalCommands</b>; no Email.</li>
+              <li>Outbox maps <b>1</b> notification (MeetingGroupProposalAccepted).</li>
+              <li>Internal commands map: <b>CreateMember</b>, <b>RequestMeetingGroupProposalVerification</b>.</li>
+              <li>Its container method is named <i>ConfigureContainer</i> (others use <i>ConfigureCompositionRoot</i>).</li>
+              <li>Exposed to the API as <b>IAdministrationModule</b>.</li>
+            </ul>
+          </article>
+
+          <article class="card" id="m-useraccess" style="--c:#2dd4bf;">
+            <header class="card-head"><span class="badge">3</span>
+              <div><h3>UserAccess</h3><p class="sig">UserAccessStartup.Initialize(…)</p></div></header>
+            <div class="chips"><span class="chip">connectionString</span><span class="chip">executionContext</span><span class="chip">logger</span><span class="chip">emailsConfiguration</span><span class="chip">textEncryptionKey</span><span class="chip nul">emailSender = null</span><span class="chip nul">eventsBus = null</span></div>
+            <ul class="facts">
+              <li><b>9</b> Autofac modules, including <b>Security</b> (uses the encryption key); no Authentication.</li>
+              <li>Outbox registered with an <b>empty</b> notification map.</li>
+              <li>Exposed to the API as <b>IUserAccessModule</b>; also used by the permission handler to load a user's permissions.</li>
+            </ul>
+          </article>
+
+          <article class="card" id="m-payments" style="--c:#fbbf24;">
+            <header class="card-head"><span class="badge">4</span>
+              <div><h3>Payments</h3><p class="sig">PaymentsStartup.Initialize(…)</p></div></header>
+            <div class="chips"><span class="chip">connectionString</span><span class="chip">executionContext</span><span class="chip">logger</span><span class="chip">emailsConfiguration</span><span class="chip nul">eventsBus = null</span><span class="chip nul">runQuartz = true</span></div>
+            <ul class="facts">
+              <li><b>9</b> Autofac modules; <b>Quartz</b> only when <i>runQuartz</i> is true.</li>
+              <li>Outbox maps <b>6</b> payment and subscription notifications.</li>
+              <li>After <i>Build()</i>, <b>RunEventsProjectors()</b> resolves and starts <i>SubscriptionsManager</i>; <i>Stop()</i> halts it together with Quartz.</li>
+              <li>Exposed to the API as <b>IPaymentsModule</b>.</li>
+            </ul>
+          </article>
+
+          <article class="card" id="m-registrations" style="--c:#86efac;">
+            <header class="card-head"><span class="badge">5</span>
+              <div><h3>Registrations</h3><p class="sig">RegistrationsStartup.Initialize(…)</p></div></header>
+            <div class="chips"><span class="chip">connectionString</span><span class="chip">executionContext</span><span class="chip">logger</span><span class="chip">emailsConfiguration</span><span class="chip">textEncryptionKey</span><span class="chip nul">emailSender = null</span><span class="chip nul">eventsBus = null</span></div>
+            <ul class="facts">
+              <li><b>10</b> Autofac modules, including <b>Domain</b> and a <b>UserAccess</b> gateway; no Authentication.</li>
+              <li>Outbox maps <b>2</b> notifications (NewUserRegistered, UserRegistrationConfirmed).</li>
+              <li><i>textEncryptionKey</i> is accepted, but its <b>SecurityModule</b> registration is commented out.</li>
+              <li>No API-side Autofac module in <i>ConfigureContainer</i>.</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+
+      <!-- ROW 3 · what every module repeats -->
+      <div class="panel" id="panel-seq">
+        <h3>Inside every <span style="font-family:var(--mono)">*Startup.Initialize</span></h3>
+        <p>The same four steps repeat for each module, which is what keeps the modules isolated from each other (ADR 0016: one IoC container per module).</p>
+        <div class="seq" id="seq">
+          <article class="card" id="s1" style="--c:#6aa9ff;">
+            <header class="card-head"><span class="badge">a</span><div><h3>Module logger</h3><p class="sig">logger.ForContext("Module", "&lt;Name&gt;")</p></div></header>
+            <p>Tags every log line written by the module so the console and JSON logs show which module produced it.</p>
+          </article>
+          <article class="card" id="s2" style="--c:#ffb454;">
+            <header class="card-head"><span class="badge">b</span><div><h3>Own DI container</h3><p class="sig">ConfigureCompositionRoot(…)</p></div></header>
+            <p><i>new ContainerBuilder()</i> → one <i>RegisterModule(…)</i> per concern (see matrix) → <i>Build()</i> → <i>&lt;Name&gt;CompositionRoot.SetContainer()</i>. The shared <i>executionContextAccessor</i> is registered as an instance.</p>
+          </article>
+          <article class="card" id="s3" style="--c:#35d0c9;">
+            <header class="card-head"><span class="badge">c</span><div><h3>Background jobs</h3><p class="sig">QuartzStartup.Initialize(…)</p></div></header>
+            <p>Starts the module's in-process Quartz scheduler. In Meetings it schedules <i>ProcessOutboxJob</i>, <i>ProcessInboxJob</i> and <i>ProcessInternalCommandsJob</i> every 2 seconds (cron <i>0/2 * * ? * *</i>), or at the polling interval when one is passed.</p>
+          </article>
+          <article class="card" id="s4" style="--c:#5bd68a;">
+            <header class="card-head"><span class="badge">d</span><div><h3>Event subscriptions</h3><p class="sig">EventsBusStartup.Initialize(…)</p></div></header>
+            <p>Resolves <i>IEventsBus</i> from the module's container and subscribes an <i>IntegrationEventGenericHandler&lt;T&gt;</i> for each integration event it consumes. With <i>eventsBus = null</i> the module registers <i>InMemoryEventBusClient</i> (ADR 0015).</p>
+          </article>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-matrix">
+        <h3>Autofac modules registered in each module's own container</h3>
+        <p>Read it as: what each business module is made of at runtime. Identical columns show the shared building blocks; the differences are intentional per module.</p>
+        <table class="matrix" id="matrix"></table>
+        <div class="key">
+          <span><span class="dot"></span>registered</span>
+          <span><span class="dot c"></span>conditional</span>
+          <span><span class="dot e"></span>registered with an empty map</span>
+          <span><span class="dot x">✕</span>commented out in code</span>
+          <span><span class="dash">—</span>not registered</span>
+        </div>
+      </div>
+
+      <div class="foot">Sources: Program.cs · Startup.cs · Modules/*/Infrastructure/Configuration/*Startup.cs · reviewed against the code on 2026-10-06</div>
+    </section>
+
+    <!-- ===================================================================================== -->
+    <!-- SECTION 02 · ASYNCHRONOUS MESSAGING (outbox / inbox / internal commands)               -->
+    <!-- ===================================================================================== -->
+    <section class="sec" id="sec-messaging" data-no="02" data-title="Async messaging: outbox, inbox, internal commands" style="left:2760px; top:0; width:3000px;">
+      <div class="sec-head"><span class="sec-no">02</span><h2>Async messaging: outbox, inbox &amp; internal commands</h2></div>
+      <p class="sec-sub">
+        How two modules exchange messages reliably, shown with one use case: <b>a new user signs up</b>.
+        The <b>Registrations</b> module stores the new <i>UserRegistration</i> in its own schema. The <b>Meetings</b> module has its own separate
+        <i>Member</i> table and must get a matching member, but Registrations never writes to Meetings' tables and Meetings is never called directly.
+        Instead, Registrations publishes <b>NewUserRegisteredIntegrationEvent</b> and Meetings reacts to it by creating the <i>Member</i>
+        (<i>CreateMemberCommand</i>) a moment later. If Meetings is slow or fails, the sign-up itself is not affected. Every hop is written to a table in the module's own schema of the shared SQL Server database (blue cards) and picked up later by a
+        Quartz job, so nothing is lost if the process stops between two steps. The bus is the only step that does not touch the database. The Quartz jobs are started by <i style="font-family:var(--mono)">QuartzStartup.Initialize</i>,
+        and the subscription in Meetings is created by <i style="font-family:var(--mono)">EventsBusStartup.Initialize</i> (section 01).
+      </p>
+      <div class="legend">
+        <span><i style="background:#86efac"></i>Registrations (publisher)</span>
+        <span><i style="background:#94a3b8"></i>Shared in-memory event bus</span>
+        <span><i style="background:#f472b6"></i>Meetings (consumer)</span>
+        <span><i style="background:#ffb454"></i>Quartz job (every 2 s)</span>
+        <span><i style="background:#38bdf8"></i>Database table (one schema per module, same SQL Server database)</span>
+      </div>
+
+      <div class="row lanes" id="lanes">
+
+        <!-- Publisher lane -->
+        <div class="lane g" id="lane-pub" style="grid-template-columns:290px 600px; --c:#86efac;">
+          <h4 class="lane-title">Registrations <small>publishes</small></h4>
+
+          <!-- database, schema [registrations] -->
+          <div class="dbcol" style="grid-column:1; grid-row:2 / 4;">
+            <p class="db-title">SQL Server · schema <b>registrations</b></p>
+            <article class="card db" id="t-reg">
+              <header class="card-head"><span class="badge">DB</span>
+                <div><h3>UserRegistrations</h3><p class="sig">business table</p></div></header>
+              <p class="db-use"><b>Step 1</b> writes the aggregate state here.</p>
+            </article>
+            <article class="card db" id="t-out">
+              <header class="card-head"><span class="badge">DB</span>
+                <div><h3>OutboxMessages</h3><p class="sig">Id · OccurredOn · Type · Data · ProcessedDate</p></div></header>
+              <p class="db-use"><b>Step 1</b> inserts the row. <b>Step 2</b> reads the rows with ProcessedDate NULL and then sets ProcessedDate.</p>
+            </article>
+          </div>
+
+          <article class="card" id="p1" style="--c:#86efac; grid-column:2; grid-row:2;">
+            <header class="card-head"><span class="badge">1</span>
+              <div><h3>Business change + outbox row</h3><p class="sig">one database transaction</p></div></header>
+            <ol class="steps">
+              <li><code>Command handler runs</code><span>The user signs up: <i>UserRegistration.RegisterNewUser</i> raises a <i>NewUserRegisteredDomainEvent</i>.</span></li>
+              <li><code>Domain events dispatcher</code><span>Turns the domain event into a notification and inserts it as a row in <i>registrations.OutboxMessages</i> (Type, Data as JSON, ProcessedDate = NULL).</span></li>
+              <li><code>Commit</code><span>The data change and the outbox row are saved together or not at all. This is the guarantee the pattern exists for.</span></li>
+            </ol>
+            <div class="src">UnitOfWork · DomainEventsDispatcher · OutboxModule</div>
+          </article>
+
+          <article class="card" id="p2" style="--c:#ffb454; grid-column:2; grid-row:3;">
+            <header class="card-head"><span class="badge">2</span>
+              <div><h3>ProcessOutboxJob <span class="tag">QUARTZ</span></h3><p class="sig">ProcessOutboxCommandHandler</p></div></header>
+            <ol class="steps">
+              <li><code>SELECT … WHERE ProcessedDate IS NULL ORDER BY OccurredOn</code><span>Reads the pending outbox rows, oldest first.</span></li>
+              <li><code>mediator.Publish(notification)</code><span>Deserializes each row (type resolved by <i>IDomainNotificationsMapper</i>) and publishes it in-process. <i>NewUserRegisteredPublishEventHandler</i> then publishes <b>NewUserRegisteredIntegrationEvent</b> to <i>IEventsBus</i>.</span></li>
+              <li><code>UPDATE … SET ProcessedDate</code><span>Marks the row as done only after the publish succeeded.</span></li>
+            </ol>
+            <div class="src">Processing/Outbox/ProcessOutboxCommandHandler.cs</div>
+          </article>
+        </div>
+
+        <!-- Bus -->
+        <div class="lane bus" id="lane-bus" style="width:400px; --c:#94a3b8;">
+          <article class="card" id="bus" style="--c:#94a3b8;">
+            <header class="card-head"><span class="badge">⇄</span>
+              <div><h3>IEventsBus</h3><p class="sig">InMemoryEventBus (singleton)</p></div></header>
+            <ul class="facts">
+              <li>One instance shared by all modules in the process (ADR 0015).</li>
+              <li>Each module gets an <b>InMemoryEventBusClient</b>, which forwards to this instance.</li>
+              <li>Delivery is synchronous and <b>not durable</b>: the bus only calls the subscribed handlers. Durability comes from the inbox on the receiving side.</li>
+              <li>Swapping it for a real broker only requires a new <i>IEventsBus</i> implementation.</li>
+            </ul>
+          </article>
+        </div>
+
+        <!-- Consumer lane -->
+        <div class="lane g" id="lane-con" style="grid-template-columns:600px 290px; --c:#f472b6;">
+          <h4 class="lane-title">Meetings <small>consumes</small></h4>
+
+          <!-- database, schema [meetings] -->
+          <div class="dbcol" style="grid-column:2; grid-row:2 / 4;">
+            <p class="db-title">SQL Server · schema <b>meetings</b></p>
+            <article class="card db" id="t-in">
+              <header class="card-head"><span class="badge">DB</span>
+                <div><h3>InboxMessages</h3><p class="sig">Id · OccurredOn · Type · Data · ProcessedDate</p></div></header>
+              <p class="db-use"><b>Step 3</b> inserts the received event. <b>Step 4</b> reads the rows with ProcessedDate NULL and then sets ProcessedDate.</p>
+            </article>
+          </div>
+          <div class="dbcol" style="grid-column:2; grid-row:4;">
+            <article class="card db" id="t-cmd">
+              <header class="card-head"><span class="badge">DB</span>
+                <div><h3>InternalCommands</h3><p class="sig">Id · EnqueueDate · Type · Data · ProcessedDate · Error</p></div></header>
+              <p class="db-use"><b>Step 4</b> inserts the queued command. <b>Step 5</b> reads the rows with ProcessedDate NULL, then sets ProcessedDate (and Error on failure).</p>
+            </article>
+            <article class="card db" id="t-mem">
+              <header class="card-head"><span class="badge">DB</span>
+                <div><h3>Members</h3><p class="sig">business table</p></div></header>
+              <p class="db-use"><b>Step 5</b> inserts the new member, in the same transaction that marks the command processed.</p>
+            </article>
+          </div>
+
+          <article class="card" id="q1" style="--c:#f472b6; grid-column:1; grid-row:2;">
+            <header class="card-head"><span class="badge">3</span>
+              <div><h3>Subscribed handler → inbox row</h3><p class="sig">IntegrationEventGenericHandler&lt;T&gt;</p></div></header>
+            <ol class="steps">
+              <li><code>EventsBusStartup.Initialize</code><span>At boot, subscribes one generic handler per integration event the module consumes (4 in Meetings).</span></li>
+              <li><code>Handle(event)</code><span>Does <b>not</b> process the event. It only inserts a row into <i>meetings.InboxMessages</i> (Id, OccurredOn, Type, Data) and returns.</span></li>
+            </ol>
+            <div class="src">EventsBus/EventsBusStartup.cs · EventsBus/IntegrationEventGenericHandler.cs</div>
+          </article>
+
+          <article class="card" id="q2" style="--c:#ffb454; grid-column:1; grid-row:3;">
+            <header class="card-head"><span class="badge">4</span>
+              <div><h3>ProcessInboxJob <span class="tag">QUARTZ</span></h3><p class="sig">ProcessInboxCommandHandler</p></div></header>
+            <ol class="steps">
+              <li><code>SELECT … WHERE ProcessedDate IS NULL</code><span>Reads the pending inbox rows.</span></li>
+              <li><code>mediator.Publish(integrationEvent)</code><span>Resolves the type by name and publishes it to the module's own handlers.</span></li>
+              <li class="hot"><code>NewUserRegisteredIntegrationEventHandler<span class="tag">ENQUEUES</span></code><span>Does not create the member itself. It calls <i>ICommandsScheduler.EnqueueAsync(new CreateMemberCommand(…))</i>, which inserts a row into <i>meetings.InternalCommands</i>.</span></li>
+              <li><code>UPDATE … SET ProcessedDate</code><span>Marks the inbox row as done.</span></li>
+            </ol>
+            <div class="src">Processing/Inbox/ProcessInboxCommandHandler.cs · Members/CreateMember/…Handler.cs</div>
+          </article>
+
+          <article class="card" id="q3" style="--c:#ffb454; grid-column:1; grid-row:4;">
+            <header class="card-head"><span class="badge">5</span>
+              <div><h3>ProcessInternalCommandsJob <span class="tag">QUARTZ</span></h3><p class="sig">ProcessInternalCommandsCommandHandler</p></div></header>
+            <ol class="steps">
+              <li><code>SELECT … FROM InternalCommands WHERE ProcessedDate IS NULL</code><span>Reads the commands the module queued for itself.</span></li>
+              <li><code>Deserialize by Type, then CommandsExecutor.Execute(command)</code><span>Runs the real command (<b>CreateMemberCommand</b>) through the normal pipeline: validation, unit of work, logging.</span></li>
+              <li><code>Success</code><span>The unit-of-work decorator saves the <i>Member</i> and sets <i>ProcessedDate</i> on the <i>InternalCommands</i> row in the same transaction.</span></li>
+              <li><code>Failure</code><span>Polly retries 3 times (waits of 1, 2 and 3 s). If it still fails, the row gets <i>ProcessedDate</i> and the <i>Error</i> text and is not picked up again.</span></li>
+            </ol>
+            <div class="src">Processing/InternalCommands/*</div>
+          </article>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-msg-notes">
+        <h3>Why three tables instead of calling the handler directly</h3>
+        <p>Each table separates one step into its own transaction, so a failure in one step doesn't undo or block the others.</p>
+        <div class="seq" id="msg-notes">
+          <article class="card" style="--c:#86efac;">
+            <header class="card-head"><span class="badge">out</span><div><h3>Outbox</h3><p class="sig">sending side</p></div></header>
+            <p>Solves the dual-write problem: the data change and the "event to publish" are committed atomically. If the process dies after the commit, the job still finds the row and publishes it.</p>
+          </article>
+          <article class="card" style="--c:#f472b6;">
+            <header class="card-head"><span class="badge">in</span><div><h3>Inbox</h3><p class="sig">receiving side</p></div></header>
+            <p>The in-memory bus is not durable, so the receiver stores the event immediately and processes it later. A failing handler never blocks the publishing module.</p>
+          </article>
+          <article class="card" style="--c:#ffb454;">
+            <header class="card-head"><span class="badge">cmd</span><div><h3>Internal commands</h3><p class="sig">a module talking to itself</p></div></header>
+            <p>Work that must happen later in its own transaction: reacting to an inbox event, sending an email, or recurring work. It is also what keeps one handler from changing two aggregates in one transaction.</p>
+          </article>
+          <article class="card" style="--c:#6aa9ff;">
+            <header class="card-head"><span class="badge">!</span><div><h3>Guarantees</h3><p class="sig">read before relying on it</p></div></header>
+            <p><b>At-least-once</b>, in order of OccurredOn. Outbox and inbox rows are marked processed only after they were handled, so a crash in between causes a second run and handlers should be safe to repeat. Each module polls its own tables with its own Quartz scheduler.</p>
+          </article>
+        </div>
+      </div>
+
+      <div class="foot">Sources: Meetings/Infrastructure/Configuration/{Quartz,EventsBus,Processing}/* · BuildingBlocks/Infrastructure/EventBus/* · other modules follow the same pattern · reviewed against the code on 2026-10-06</div>
+    </section>
+
+    <!-- ===================================================================================== -->
+    <!-- SECTION 03 · LAYERED OVERVIEW                                                          -->
+    <!-- ===================================================================================== -->
+    <section class="sec" id="sec-layers" data-no="03" data-title="Layered architecture overview" style="left:5960px; top:0; width:2400px;">
+      <div class="sec-head"><span class="sec-no">03</span><h2>Layered architecture overview</h2></div>
+      <p class="sec-sub">
+        The main building blocks of the solution, from the client down to the database. A request enters through the <b>API</b>, crosses a <b>module facade</b>
+        into one of the five business <b>modules</b> and reaches that module's own schema in the <b>database</b>. Each module also runs its own <b>job scheduler</b>
+        in the background. Modules never call each other directly: they talk through the in-memory <b>event bus</b>, using the outbox / inbox /
+        internal-commands pattern from section 02. Details of each part are in sections 01 and 02.
+      </p>
+      <div class="legend">
+        <span><i style="background:#5aa9ff"></i>Clients &amp; API</span>
+        <span><i style="background:#ffb454"></i>Module boundary &amp; job schedulers</span>
+        <span><i style="background:#f472b6"></i>Business modules</span>
+        <span><i style="background:#94a3b8"></i>Event bus</span>
+        <span><i style="background:#38bdf8"></i>Database</span>
+        <span><i style="background:#35d0c9"></i>Shared &amp; cross-cutting</span>
+      </div>
+
+      <div class="layers" id="layers">
+
+        <div class="layer" id="l-clients" style="--c:#5aa9ff;">
+          <div class="layer-name"><b>1</b>Clients</div>
+          <div class="layer-body">
+            <article class="card box"><header class="card-head"><div><h3>Web / SPA / API client</h3><p class="sig">sends HTTPS + JSON</p></div></header></article>
+            <article class="card box"><header class="card-head"><div><h3>Swagger UI</h3><p class="sig">try the endpoints from the browser</p></div></header></article>
+            <article class="card box"><header class="card-head"><div><h3>Bearer token</h3><p class="sig">obtained from the built-in IdentityServer</p></div></header></article>
+          </div>
+        </div>
+
+        <div class="layer" id="l-api" style="--c:#5aa9ff;">
+          <div class="layer-name"><b>2</b>API host<small>ASP.NET Core · Autofac</small></div>
+          <div class="layer-body">
+            <article class="card box"><header class="card-head"><div><h3>Request pipeline</h3><p class="sig">Startup.Configure</p></div></header>
+              <p class="box-t">CORS · CorrelationMiddleware · IdentityServer (login, token) · HasPermission authorization · ProblemDetails (error → HTTP 400 / 409) · Swagger</p></article>
+            <article class="card box"><header class="card-head"><div><h3>Controllers</h3><p class="sig">one folder per module</p></div></header>
+              <p class="box-t">Administration · Meetings · Payments · UserAccess (which also exposes the user registration endpoints)</p></article>
+            <article class="card box"><header class="card-head"><div><h3>Execution context</h3><p class="sig">ExecutionContextAccessor</p></div></header>
+              <p class="box-t">Current user id and correlation id, shared with every module.</p></article>
+            <article class="card box"><header class="card-head"><div><h3>Composition</h3><p class="sig">Program · Startup</p></div></header>
+              <p class="box-t">Boots the host, then <i>InitializeModules</i> starts the five modules (section 01).</p></article>
+          </div>
+        </div>
+
+        <div class="layer" id="l-facades" style="--c:#ffb454;">
+          <div class="layer-name"><b>3</b>Module facades<small>public contract of each module</small></div>
+          <div class="layer-body">
+            <article class="card box"><header class="card-head"><div><h3>IAdministrationModule</h3></div></header></article>
+            <article class="card box"><header class="card-head"><div><h3>IMeetingsModule</h3></div></header></article>
+            <article class="card box"><header class="card-head"><div><h3>IUserAccessModule</h3></div></header></article>
+            <article class="card box"><header class="card-head"><div><h3>IPaymentsModule</h3></div></header></article>
+            <article class="card box"><header class="card-head"><div><h3>IRegistrationsModule</h3></div></header></article>
+          </div>
+          <p class="layer-note">The only way into a module: <i>ExecuteCommandAsync</i> and <i>ExecuteQueryAsync</i>. Controllers never touch module internals.</p>
+        </div>
+
+        <div class="layer" id="l-modules" style="--c:#f472b6;">
+          <div class="layer-name"><b>4</b>Business modules<small>one DI container, one schema each</small></div>
+          <div class="layer-body split">
+            <article class="card box inside" id="mod-inside" style="--c:#f472b6;">
+              <header class="card-head"><div><h3>Inside every module</h3><p class="sig">same shape, isolated from the others</p></div></header>
+              <ul class="facts">
+                <li><b>Domain</b>: aggregates, value objects, domain events, business rules.</li>
+                <li><b>Application</b>: commands, queries and handlers (CQRS with MediatR).</li>
+                <li><b>Infrastructure</b>: data access, own composition root.</li>
+                <li><b>Quartz scheduler</b>: runs the module's background jobs (layer 5).</li>
+              </ul>
+            </article>
+            <div class="mods3" id="mods3">
+              <article class="card box" style="--c:#f472b6;"><header class="card-head"><div><h3>Meetings</h3></div></header><p class="box-t">Groups, meetings, members, comments.</p></article>
+              <article class="card box" style="--c:#a78bfa;"><header class="card-head"><div><h3>Administration</h3></div></header><p class="box-t">Approves meeting group proposals.</p></article>
+              <article class="card box" style="--c:#2dd4bf;"><header class="card-head"><div><h3>UserAccess</h3></div></header><p class="box-t">Users, roles, permissions, login.</p></article>
+              <article class="card box" style="--c:#fbbf24;"><header class="card-head"><div><h3>Payments</h3></div></header><p class="box-t">Subscriptions and meeting fees.</p></article>
+              <article class="card box" style="--c:#86efac;"><header class="card-head"><div><h3>Registrations</h3></div></header><p class="box-t">New user sign-up and confirmation.</p></article>
+            </div>
+            <article class="card box bus" id="bus3" style="--c:#94a3b8;">
+              <header class="card-head"><div><h3>Event bus</h3><p class="sig">IEventsBus · in-memory</p></div></header>
+              <p class="box-t">Carries integration events between modules. Each event type lives in the publisher's <i>IntegrationEvents</i> assembly, which is the only thing other modules may reference.</p>
+            </article>
+          </div>
+        </div>
+
+        <div class="layer" id="l-jobs" style="--c:#ffb454;">
+          <div class="layer-name"><b>5</b>Job schedulers<small>Quartz · one in-process scheduler per module</small></div>
+          <div class="layer-body">
+            <article class="card box"><header class="card-head"><div><h3>ProcessOutboxJob</h3><p class="sig">every 2 s</p></div></header>
+              <p class="box-t">Reads the module's outbox table and publishes each message, so integration events reach the event bus.</p></article>
+            <article class="card box"><header class="card-head"><div><h3>ProcessInboxJob</h3><p class="sig">every 2 s</p></div></header>
+              <p class="box-t">Reads the inbox table, filled by the handler subscribed to the bus, and runs the module's event handlers.</p></article>
+            <article class="card box"><header class="card-head"><div><h3>ProcessInternalCommandsJob</h3><p class="sig">every 2 s</p></div></header>
+              <p class="box-t">Reads the internal-commands table and executes each queued command, with retries.</p></article>
+          </div>
+          <p class="layer-note">Started at boot by <i>QuartzStartup.Initialize</i> in each module (Payments only when <i>runQuartz</i> is true). The jobs run outside HTTP requests and use the same module handlers as the API. Detail in section 02.</p>
+        </div>
+
+        <div class="layer" id="l-db" style="--c:#38bdf8;">
+          <div class="layer-name"><b>6</b>Database<small>one SQL Server database</small></div>
+          <div class="layer-body">
+            <article class="card box db"><header class="card-head"><div><h3>meetings</h3></div></header></article>
+            <article class="card box db"><header class="card-head"><div><h3>administration</h3></div></header></article>
+            <article class="card box db"><header class="card-head"><div><h3>users</h3><p class="sig">UserAccess module</p></div></header></article>
+            <article class="card box db"><header class="card-head"><div><h3>payments</h3></div></header></article>
+            <article class="card box db"><header class="card-head"><div><h3>registrations</h3></div></header></article>
+            <article class="card box db"><header class="card-head"><div><h3>app</h3><p class="sig">shared: Emails, MigrationsJournal</p></div></header></article>
+          </div>
+          <p class="layer-note">Each module reads and writes <b>only its own schema</b>: its business tables plus its outbox, inbox and internal-commands tables.</p>
+        </div>
+
+        <div class="layer" id="l-shared" style="--c:#35d0c9;">
+          <div class="layer-name"><b>7</b>Shared &amp; cross-cutting</div>
+          <div class="layer-body">
+            <article class="card box"><header class="card-head"><div><h3>Building blocks</h3><p class="sig">referenced by every module</p></div></header>
+              <p class="box-t">Domain base types · command / query contracts · event bus · domain-event dispatching · SQL connection factory · email sender.</p></article>
+            <article class="card box"><header class="card-head"><div><h3>Logging</h3><p class="sig">Serilog</p></div></header>
+              <p class="box-t">Console and JSON file, tagged with the module name.</p></article>
+            <article class="card box"><header class="card-head"><div><h3>Database tooling</h3><p class="sig">DatabaseMigrator</p></div></header>
+              <p class="box-t">Creates the schemas and applies the migration scripts.</p></article>
+            <article class="card box"><header class="card-head"><div><h3>Tests</h3></div></header>
+              <p class="box-t">Unit, integration (per module), architecture tests and the system-under-test suite.</p></article>
+            <article class="card box"><header class="card-head"><div><h3>Delivery</h3><p class="sig">Docker · build pipeline</p></div></header>
+              <p class="box-t">Dockerfiles for the API and the database, plus the build pipeline.</p></article>
+          </div>
+        </div>
+      </div>
+
+      <div class="foot">Sources: src/API · src/Modules/* · src/BuildingBlocks · src/Database · src/Tests · reviewed against the code on 2026-10-06</div>
+    </section>
+
+    <!-- NEXT SECTION GOES HERE: <section class="sec" id="sec-…" data-no="04" data-title="…" style="left:…; top:…; width:…"> -->
+  </div>
+</div>
+
+<div id="title" class="glass"><div class="mark"></div><div><b>MyMeetings · Solution Architecture</b><small>Modular monolith · DDD · living canvas</small></div></div>
+<nav id="nav" class="glass">
+  <div id="nav-head"><h4>Sections</h4><button id="nav-toggle" title="Collapse / expand menu (M)" aria-expanded="true" aria-controls="nav-list">«</button></div>
+  <div id="nav-list"></div>
+</nav>
+<div id="hint" class="glass"><kbd>scroll</kbd> zoom &nbsp; <kbd>drag</kbd> pan &nbsp; <kbd>F</kbd> fit all &nbsp; <kbd>M</kbd> menu &nbsp; <kbd>0</kbd> reset &nbsp; <kbd>1</kbd>–<kbd>9</kbd> sections</div>
+<div id="controls" class="glass">
+  <button id="zin" title="Zoom in (+)">+</button><output id="zval">100%</output><button id="zout" title="Zoom out (−)">−</button>
+  <span class="sep"></span>
+  <button id="fit" class="txt" title="Fit everything (F)">Fit</button>
+  <button id="reset" class="txt" title="Reset to 100% (0)">100%</button>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const $  = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+  const vp = $('#viewport'), world = $('#world'), svg = $('#links'), zval = $('#zval');
+  const S = { x: 0, y: 0, k: 1 };
+  const MIN = 0.08, MAX = 4;
+
+  /* ---------------------------------------------------------------- view transform */
+  function apply() {
+    world.style.transform = `translate(${S.x}px, ${S.y}px) scale(${S.k})`;
+    const g = 28 * S.k;
+    vp.style.backgroundSize = `${g}px ${g}px`;
+    vp.style.backgroundPosition = `${S.x}px ${S.y}px`;
+    zval.textContent = Math.round(S.k * 100) + '%';
+  }
+  function zoomAt(cx, cy, factor) {
+    const k = clamp(S.k * factor, MIN, MAX), f = k / S.k;
+    S.x = cx - (cx - S.x) * f; S.y = cy - (cy - S.y) * f; S.k = k; apply();
+  }
+  let raf = 0;
+  function flyTo(t, ms = 480) {
+    cancelAnimationFrame(raf);
+    const s = { ...S }, t0 = performance.now(), ease = p => 1 - Math.pow(1 - p, 3);
+    (function step(now) {
+      const p = Math.min(1, (now - t0) / ms), e = ease(p);
+      S.x = s.x + (t.x - s.x) * e; S.y = s.y + (t.y - s.y) * e; S.k = s.k + (t.k - s.k) * e; apply();
+      if (p < 1) raf = requestAnimationFrame(step);
+    })(t0);
+  }
+  // Width reserved on the left for the section menu (expanded, collapsed or hidden on narrow screens).
+  const navLeft = () => window.innerWidth > 1100 ? ($('#nav').classList.contains('collapsed') ? 90 : 290) : 24;
+  // Frame a rectangle (world units) inside the free area between the overlay chrome.
+  function frame(r, maxK = 1.4) {
+    const L = navLeft(), T = 84, R = 28, B = 84;
+    const aw = window.innerWidth - L - R, ah = window.innerHeight - T - B;
+    const k = clamp(Math.min(aw / r.w, ah / r.h), MIN, maxK);
+    return { k, x: L + (aw - r.w * k) / 2 - r.x * k, y: T + (ah - r.h * k) / 2 - r.y * k };
+  }
+  // Readable framing for a section: fill the free width and align to the section's top edge (pan down to read on).
+  function frameWidth(r) {
+    const L = navLeft(), T = 84, R = 28;
+    const k = clamp((window.innerWidth - L - R) / r.w, MIN, 1.4);
+    return { k, x: L - r.x * k, y: T - r.y * k };
+  }
+  const secRect = el => ({ x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight });
+  function allRect() {
+    const rs = $$('.sec').map(secRect);
+    const x1 = Math.min(...rs.map(r => r.x)), y1 = Math.min(...rs.map(r => r.y));
+    const x2 = Math.max(...rs.map(r => r.x + r.w)), y2 = Math.max(...rs.map(r => r.y + r.h));
+    return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+  }
+  const fitAll = (animate = true) => { const t = frame(allRect()); animate ? flyTo(t) : (Object.assign(S, t), apply()); };
+
+  /* ---------------------------------------------------------------- input: wheel, drag, pinch, keys */
+  vp.addEventListener('wheel', e => {
+    e.preventDefault(); cancelAnimationFrame(raf);
+    const speed = e.ctrlKey ? 0.012 : 0.0016;
+    zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * speed));
+  }, { passive: false });
+
+  const ptrs = new Map(); let pinch = null;
+  vp.addEventListener('pointerdown', e => {
+    cancelAnimationFrame(raf); vp.setPointerCapture(e.pointerId);
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); vp.classList.add('grabbing');
+    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) }; }
+  });
+  vp.addEventListener('pointermove', e => {
+    const p = ptrs.get(e.pointerId); if (!p) return;
+    if (ptrs.size === 1) { S.x += e.clientX - p.x; S.y += e.clientY - p.y; apply(); }
+    p.x = e.clientX; p.y = e.clientY;
+    if (ptrs.size === 2 && pinch) {
+      const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+      zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, d / pinch.d); pinch.d = d;
+    }
+  });
+  const endPtr = e => { ptrs.delete(e.pointerId); pinch = null; if (!ptrs.size) vp.classList.remove('grabbing'); };
+  vp.addEventListener('pointerup', endPtr); vp.addEventListener('pointercancel', endPtr);
+  vp.addEventListener('dblclick', e => { const k = clamp(S.k * 1.7, MIN, MAX); zoomAtAnimated(e.clientX, e.clientY, k / S.k); });
+  function zoomAtAnimated(cx, cy, f) {
+    const k = clamp(S.k * f, MIN, MAX), r = k / S.k;
+    flyTo({ k, x: cx - (cx - S.x) * r, y: cy - (cy - S.y) * r }, 260);
+  }
+
+  const cx = () => window.innerWidth / 2, cy = () => window.innerHeight / 2;
+  $('#zin').onclick  = () => zoomAtAnimated(cx(), cy(), 1.35);
+  $('#zout').onclick = () => zoomAtAnimated(cx(), cy(), 1 / 1.35);
+  $('#fit').onclick  = () => fitAll();
+  $('#reset').onclick = () => zoomAtAnimated(cx(), cy(), 1 / S.k);
+
+  window.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const step = 90;
+    switch (e.key) {
+      case '+': case '=': zoomAtAnimated(cx(), cy(), 1.35); break;
+      case '-': case '_': zoomAtAnimated(cx(), cy(), 1 / 1.35); break;
+      case '0': zoomAtAnimated(cx(), cy(), 1 / S.k); break;
+      case 'f': case 'F': fitAll(); break;
+      case 'm': case 'M': toggleNav(); break;
+      case 'ArrowLeft':  S.x += step; apply(); break;
+      case 'ArrowRight': S.x -= step; apply(); break;
+      case 'ArrowUp':    S.y += step; apply(); break;
+      case 'ArrowDown':  S.y -= step; apply(); break;
+      default:
+        if (/^[1-9]$/.test(e.key)) { const s = $$('.sec')[+e.key - 1]; if (s) flyTo(frameWidth(secRect(s))); }
+    }
+  });
+
+  /* ---------------------------------------------------------------- side navigation (built from the sections) */
+  const nav = $('#nav'), navToggle = $('#nav-toggle');
+  function setNav(collapsed) {
+    nav.classList.toggle('collapsed', collapsed);
+    navToggle.textContent = collapsed ? '»' : '«';
+    navToggle.setAttribute('aria-expanded', String(!collapsed));
+    try { localStorage.setItem('canvas-nav-collapsed', collapsed ? '1' : '0'); } catch (e) { /* storage unavailable */ }
+  }
+  function toggleNav() { setNav(!nav.classList.contains('collapsed')); }
+  navToggle.onclick = toggleNav;
+  try { setNav(localStorage.getItem('canvas-nav-collapsed') === '1'); } catch (e) { /* default: expanded */ }
+
+  const navList = $('#nav-list');
+  $$('.sec').forEach(sec => {
+    const b = document.createElement('button');
+    b.innerHTML = `<span>${sec.dataset.no}</span>${sec.dataset.title}`;
+    b.onclick = () => flyTo(frameWidth(secRect(sec)));
+    navList.appendChild(b);
+  });
+
+  /* ---------------------------------------------------------------- data-driven matrix */
+  // y = registered · c = conditional · e = registered with empty map · x = commented out · '' = not registered
+  const COLS = ['Logging', 'DataAccess', 'Processing', 'EventsBus', 'Mediator', 'Authentication', 'Outbox', 'InternalCommands', 'Email', 'Quartz', 'Security', 'Domain', 'UserAccess gateway'];
+  // one row per module, one entry per column in COLS order
+  const MATRIX = [
+    ['Meetings',       '#f472b6', ['y','y','y','y','y','y','y','' ,'y','y','' ,'' ,'' ]],
+    ['Administration', '#a78bfa', ['y','y','y','y','y','y','y','y','' ,'y','' ,'' ,'' ]],
+    ['UserAccess',     '#2dd4bf', ['y','y','y','y','y','' ,'e','' ,'y','y','y','' ,'' ]],
+    ['Payments',       '#fbbf24', ['y','y','y','y','y','y','y','' ,'y','c','' ,'' ,'' ]],
+    ['Registrations',  '#86efac', ['y','y','y','y','y','' ,'y','' ,'y','y','x','y','y']],
+  ];
+  const cell = v => v === 'x' ? '<span class="dot x">✕</span>' : v ? `<span class="dot ${v === 'y' ? '' : v}"></span>` : '<span class="dash">—</span>';
+  $('#matrix').innerHTML =
+    '<thead><tr><th></th>' + COLS.map(c => `<th>${c}</th>`).join('') + '</tr></thead><tbody>' +
+    MATRIX.map(([n, col, v]) => `<tr><th><i style="background:${col}"></i>${n}</th>${v.map(x => `<td>${cell(x)}</td>`).join('')}</tr>`).join('') + '</tbody>';
+
+  /* ---------------------------------------------------------------- connectors (computed from the DOM) */
+  const NS = 'http://www.w3.org/2000/svg';
+  const rectOf = (el, wr) => { const r = el.getBoundingClientRect(); return { x: (r.left - wr.left) / S.k, y: (r.top - wr.top) / S.k, w: r.width / S.k, h: r.height / S.k }; };
+  const pt = (r, side) => ({ left: [r.x, r.y + r.h / 2], right: [r.x + r.w, r.y + r.h / 2], top: [r.x + r.w / 2, r.y], bottom: [r.x + r.w / 2, r.y + r.h] }[side]);
+
+  // [from selector, to selector, from side, to side, options]
+  const LINKS = [
+    ['#c-program .card-head',   '#c-ctor .card-head',      'right', 'left',   { flow: true }],
+    ['#c-ctor .card-head',      '#c-services .card-head',  'right', 'left',   { flow: true }],
+    ['#c-services .card-head',  '#c-container .card-head', 'right', 'left',   { flow: true }],
+    ['#c-container .card-head', '#c-configure .card-head', 'right', 'left',   { flow: true }],
+    ['#c-configure',            '#band',                   'bottom', 'top',   { flow: true, label: 'InitializeModules(container)', fromX: 'center' }],
+    ['#s1', '#s2', 'right', 'left', { flow: true }],
+    ['#s2', '#s3', 'right', 'left', { flow: true }],
+    ['#s3', '#s4', 'right', 'left', { flow: true }],
+    // section 02 · outbox → bus → inbox → internal command
+    ['#p1', '#t-reg', 'left', 'right', { flow: true, label: 'INSERT / UPDATE' }],
+    ['#p1', '#t-out', 'left', 'right', { flow: true, label: 'INSERT' }],
+    ['#p2', '#t-out', 'left', 'right', { flow: true, label: 'SELECT, UPDATE' }],
+    ['#q1', '#t-in',  'right', 'left', { flow: true, label: 'INSERT' }],
+    ['#q2', '#t-in',  'right', 'left', { flow: true, label: 'SELECT, UPDATE' }],
+    ['#q2', '#t-cmd', 'right', 'left', { flow: true, label: 'INSERT' }],
+    ['#q3', '#t-cmd', 'right', 'left', { flow: true, label: 'SELECT, UPDATE' }],
+    ['#q3', '#t-mem', 'right', 'left', { flow: true, label: 'INSERT' }],
+    ['#p1', '#p2',  'bottom', 'top',  { flow: true, label: 'poll every 2 s' }],
+    ['#p2', '#bus', 'right',  'left', { flow: true, label: 'Publish' }],
+    ['#bus', '#q1', 'right',  'left', { flow: true, label: 'Handle' }],
+    ['#q1', '#q2',  'bottom', 'top',  { flow: true, label: 'InboxMessages row' }],
+    ['#q2', '#q3',  'bottom', 'top',  { flow: true, label: 'InternalCommands row' }],
+    // section 03 · layered overview
+    ['#l-clients',  '#l-api',      'bottom', 'top',  { flow: true, label: 'HTTPS + JSON', fromX: 'center' }],
+    ['#l-api',      '#l-facades',  'bottom', 'top',  { flow: true, label: 'call the module facade', fromX: 'center' }],
+    ['#l-facades',  '#l-modules',  'bottom', 'top',  { flow: true, label: 'command / query', fromX: 'center' }],
+    ['#mods3',      '#l-jobs',     'bottom', 'top',  { flow: true, label: 'each module owns a scheduler', fromX: 'center' }],
+    ['#l-jobs',     '#l-db',       'bottom', 'top',  { flow: true, label: 'own schema only', fromX: 'center' }],
+    ['#mods3',      '#bus3',       'right',  'left', { flow: true, label: 'events' }],
+  ];
+  // Fan-out from the band header to each module card, in call order.
+  const FANOUT = ['#m-meetings', '#m-admin', '#m-useraccess', '#m-payments', '#m-registrations'];
+
+  function mk(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); (parent || svg).appendChild(e); return e; }
+  function path(a, b, vertical, cls) {
+    const d = vertical ? Math.max(30, Math.abs(b[1] - a[1]) / 2) : Math.max(30, Math.abs(b[0] - a[0]) / 2);
+    const sg = b[0] >= a[0] ? 1 : -1;   // horizontal links may also run right-to-left
+    const dAttr = vertical
+      ? `M${a[0]},${a[1]} C${a[0]},${a[1] + d} ${b[0]},${b[1] - d} ${b[0]},${b[1]}`
+      : `M${a[0]},${a[1]} C${a[0] + sg * d},${a[1]} ${b[0] - sg * d},${b[1]} ${b[0]},${b[1]}`;
+    mk('path', { d: dAttr, class: 'lnk ' + (cls || ''), 'marker-end': 'url(#arrow)' });
+  }
+  function label(text, x, y) {
+    const g = mk('g', {}), w = text.length * 8.1 + 28;
+    mk('rect', { x: x - w / 2, y: y - 17, width: w, height: 34, rx: 17, class: 'lbl-bg' }, g);
+    mk('text', { x, y: y + 5, class: 'lbl', 'text-anchor': 'middle' }, g).textContent = text;
+  }
+  function drawLinks() {
+    svg.innerHTML = '<defs><marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6aa9ff"/></marker></defs>';
+    const wr = world.getBoundingClientRect();
+    LINKS.forEach(([f, t, fs, ts, o]) => {
+      const fe = $(f), te = $(t); if (!fe || !te) return;
+      const a = pt(rectOf(fe, wr), fs), b = pt(rectOf(te, wr), ts);
+      const vertical = fs === 'bottom';
+      if (vertical && o.fromX === 'center') b[0] = a[0];
+      path(a, b, vertical, o.flow ? 'flow' : '');
+      if (o.label) label(o.label, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+    });
+    const ib = rectOf($('#band .inputs'), wr);
+    FANOUT.forEach(sel => {
+      const r = rectOf($(sel), wr), x = r.x + r.w / 2;
+      path([x, ib.y + ib.h], [x, r.y], true, 'flow thin');
+    });
+  }
+
+  /* ---------------------------------------------------------------- icons */
+  // Emoji are added from here so the HTML stays plain. Key = start of the heading text (longest key wins).
+  const SEC_ICONS = { '01': '🚀', '02': '📨', '03': '🏛️' };
+  const ICONS = {
+    // section 01
+    'Program.Main': '🚀', 'Startup constructor': '🧱', 'ConfigureServices': '🧩', 'ConfigureContainer': '💉', 'Configure': '⚙️',
+    'InitializeModules': '🏁', 'Inside every': '🔁', 'Autofac modules registered': '🗂️',
+    'Module logger': '🪵', 'Own DI container': '📦', 'Background jobs': '⏱️', 'Event subscriptions': '📡',
+    'Meetings': '📅', 'Administration': '🛡️', 'UserAccess': '🔐', 'Payments': '💳', 'Registrations': '📝',
+    // section 02
+    'Business change': '📤', 'ProcessOutboxJob': '⏱️', 'ProcessInboxJob': '⏱️', 'ProcessInternalCommandsJob': '⏱️',
+    'IEventsBus': '🚌', 'Subscribed handler': '📥', 'UserRegistrations': '🧾', 'OutboxMessages': '📤', 'InboxMessages': '📥',
+    'InternalCommands': '📋', 'Members': '👤', 'Why three tables': '🤔', 'Outbox': '📤', 'Inbox': '📥', 'Internal commands': '🔁', 'Guarantees': '✅',
+    // section 03
+    'Clients': '🌐', 'API host': '🖥️', 'Module facades': '🚪', 'Business modules': '🏢', 'Job schedulers': '⏱️', 'Database': '🗄️', 'Shared & cross-cutting': '🧰',
+    'Web / SPA': '💻', 'Swagger UI': '📖', 'Bearer token': '🔑', 'Request pipeline': '🛤️', 'Controllers': '🎮', 'Execution context': '🧭', 'Composition': '🏗️',
+    'IAdministrationModule': '🚪', 'IMeetingsModule': '🚪', 'IUserAccessModule': '🚪', 'IPaymentsModule': '🚪', 'IRegistrationsModule': '🚪',
+    'Event bus': '🚌', 'meetings': '🗃️', 'administration': '🗃️', 'users': '🗃️', 'payments': '🗃️', 'registrations': '🗃️', 'app': '🗃️',
+    'Building blocks': '🧱', 'Logging': '🪵', 'Database tooling': '🛠️', 'Tests': '🧪', 'Delivery': '🐳',
+  };
+  const KEYS = Object.keys(ICONS).sort((a, b) => b.length - a.length);
+  // Prefix the heading's own first text node (not text inside badges, tags or <small>) with its emoji.
+  function addIcon(el, icon) {
+    const t = [...el.childNodes].find(n => n.nodeType === 3 && n.nodeValue.trim());
+    if (t && !t.nodeValue.includes(icon)) t.nodeValue = icon + ' ' + t.nodeValue.trimStart();
+  }
+  $$('.card-head h3, .layer-name, .lane-title, .band-head h3, .panel > h3').forEach(el => {
+    const own = [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.nodeValue).join('').trim();
+    const k = KEYS.find(key => own.startsWith(key));
+    if (k) addIcon(el, ICONS[k]);
+  });
+  $$('.sec').forEach(sec => { const i = SEC_ICONS[sec.dataset.no]; if (i) addIcon($('.sec-head h2', sec), i); });
+  $$('#nav-list button').forEach((b, n) => { const i = SEC_ICONS[$$('.sec')[n].dataset.no]; if (i) b.append(' ' + i); });
+
+  /* ---------------------------------------------------------------- boot */
+  function boot() {
+    drawLinks();
+    const m = /view=(-?[\d.]+),(-?[\d.]+),([\d.]+)/.exec(location.hash);   // shareable deep link: #view=x,y,zoom
+    if (m) { S.x = +m[1]; S.y = +m[2]; S.k = clamp(+m[3], MIN, MAX); apply(); } else { Object.assign(S, frameWidth(secRect($('.sec')))); apply(); }
+  }
+  window.addEventListener('load', () => (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(boot));
+  window.addEventListener('resize', () => { /* keep current view; connectors are in world units */ });
+  apply();
+})();
+</script>
+</body>
+</html>
