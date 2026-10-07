@@ -5,12 +5,14 @@ using FluentValidation;
 
 namespace CompanyName.MyMeetings.Modules.Meetings.Infrastructure.Configuration.Processing
 {
+    // Same as ValidationCommandHandlerDecorator, for commands that return a result.
     internal class ValidationCommandHandlerWithResultDecorator<T, TResult> : ICommandHandler<T, TResult>
         where T : ICommand<TResult>
     {
         private readonly IList<IValidator<T>> _validators;
         private readonly ICommandHandler<T, TResult> _decorated;
 
+        // Receives the validators of the command and the wrapped handler.
         public ValidationCommandHandlerWithResultDecorator(
             IList<IValidator<T>> validators,
             ICommandHandler<T, TResult> decorated)
@@ -19,6 +21,7 @@ namespace CompanyName.MyMeetings.Modules.Meetings.Infrastructure.Configuration.P
             _decorated = decorated;
         }
 
+        // Throws InvalidCommandException if validation fails, otherwise runs the wrapped handler and returns its result.
         public Task<TResult> Handle(T command, CancellationToken cancellationToken)
         {
             var errors = _validators

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CompanyName.MyMeetings.Modules.Meetings.Infrastructure.Configuration.Processing
 {
+    // Same as UnitOfWorkCommandHandlerDecorator, for commands that return a result.
     internal class UnitOfWorkCommandHandlerWithResultDecorator<T, TResult> : ICommandHandler<T, TResult>
         where T : ICommand<TResult>
     {
@@ -12,6 +13,7 @@ namespace CompanyName.MyMeetings.Modules.Meetings.Infrastructure.Configuration.P
         private readonly IUnitOfWork _unitOfWork;
         private readonly MeetingsContext _meetingsContext;
 
+        // Receives the wrapped handler, the unit of work and the Meetings context.
         public UnitOfWorkCommandHandlerWithResultDecorator(
             ICommandHandler<T, TResult> decorated,
             IUnitOfWork unitOfWork,
@@ -22,6 +24,7 @@ namespace CompanyName.MyMeetings.Modules.Meetings.Infrastructure.Configuration.P
             _meetingsContext = meetingsContext;
         }
 
+        // Runs the wrapped handler, sets ProcessedDate for internal commands, commits and returns the result.
         public async Task<TResult> Handle(T command, CancellationToken cancellationToken)
         {
             var result = await this._decorated.Handle(command, cancellationToken);

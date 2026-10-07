@@ -5,12 +5,14 @@ using FluentValidation;
 
 namespace CompanyName.MyMeetings.Modules.Meetings.Infrastructure.Configuration.Processing
 {
+    // Decorator that validates a command with its FluentValidation validators before the handler runs.
     internal class ValidationCommandHandlerDecorator<T> : ICommandHandler<T>
         where T : ICommand
     {
         private readonly IList<IValidator<T>> _validators;
         private readonly ICommandHandler<T> _decorated;
 
+        // Receives the validators of the command and the wrapped handler.
         public ValidationCommandHandlerDecorator(
             IList<IValidator<T>> validators,
             ICommandHandler<T> decorated)
@@ -19,6 +21,7 @@ namespace CompanyName.MyMeetings.Modules.Meetings.Infrastructure.Configuration.P
             _decorated = decorated;
         }
 
+        // Throws InvalidCommandException if validation fails, otherwise runs the wrapped handler.
         public async Task Handle(T command, CancellationToken cancellationToken)
         {
             var errors = _validators

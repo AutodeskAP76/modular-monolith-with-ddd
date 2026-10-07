@@ -7,17 +7,20 @@ using Microsoft.Extensions.Logging;
 
 namespace CompanyName.MyMeetings.Modules.Meetings.Infrastructure.Configuration.DataAccess
 {
+    // Autofac module that registers the database access services (SQL connection factory, EF Core context, repositories).
     internal class DataAccessModule : Autofac.Module
     {
         private readonly string _databaseConnectionString;
         private readonly ILoggerFactory _loggerFactory;
 
+        // Receives the connection string and logger factory used to configure data access.
         internal DataAccessModule(string databaseConnectionString, ILoggerFactory loggerFactory)
         {
             _databaseConnectionString = databaseConnectionString;
             _loggerFactory = loggerFactory;
         }
 
+        // Registers the SQL connection factory, the MeetingsContext and every *Repository class of the module.
         protected override void Load(ContainerBuilder builder)
         {
             builder.RegisterType<SqlConnectionFactory>()

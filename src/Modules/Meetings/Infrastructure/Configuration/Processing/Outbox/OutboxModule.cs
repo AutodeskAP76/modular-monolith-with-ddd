@@ -8,15 +8,18 @@ using Module = Autofac.Module;
 
 namespace CompanyName.MyMeetings.Modules.Meetings.Infrastructure.Configuration.Processing.Outbox
 {
+    // Autofac module that registers the outbox and the mapping between stored notification names and their types.
     internal class OutboxModule : Module
     {
         private readonly BiDictionary<string, Type> _domainNotificationsMap;
 
+        // Receives the notification name-to-type map.
         public OutboxModule(BiDictionary<string, Type> domainNotificationsMap)
         {
             _domainNotificationsMap = domainNotificationsMap;
         }
 
+        // Registers the outbox accessor and the notifications mapper after checking that every notification is mapped.
         protected override void Load(ContainerBuilder builder)
         {
             builder.RegisterType<OutboxAccessor>()
@@ -33,6 +36,7 @@ namespace CompanyName.MyMeetings.Modules.Meetings.Infrastructure.Configuration.P
                 .SingleInstance();
         }
 
+        // Fails fast at startup if any domain event notification in the Application assembly is missing from the map.
         private void CheckMappings()
         {
             var domainEventNotifications = Assemblies.Application

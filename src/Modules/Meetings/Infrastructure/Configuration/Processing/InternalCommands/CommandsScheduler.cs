@@ -7,15 +7,18 @@ using Newtonsoft.Json;
 
 namespace CompanyName.MyMeetings.Modules.Meetings.Infrastructure.Configuration.Processing.InternalCommands
 {
+    // Queues commands in the InternalCommands table so the ProcessInternalCommandsJob runs them later.
     public class CommandsScheduler : ICommandsScheduler
     {
         private readonly ISqlConnectionFactory _sqlConnectionFactory;
 
+        // Receives the SQL connection factory.
         public CommandsScheduler(ISqlConnectionFactory sqlConnectionFactory)
         {
             _sqlConnectionFactory = sqlConnectionFactory;
         }
 
+        // Saves the command (type and JSON data) as a new row to be processed later.
         public async Task EnqueueAsync(ICommand command)
         {
             var connection = this._sqlConnectionFactory.GetOpenConnection();
@@ -35,6 +38,7 @@ namespace CompanyName.MyMeetings.Modules.Meetings.Infrastructure.Configuration.P
             });
         }
 
+        // Not supported yet: commands that return a result cannot be queued.
         public Task EnqueueAsync<T>(ICommand<T> command)
         {
             throw new NotImplementedException();
